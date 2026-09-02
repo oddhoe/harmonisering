@@ -9,7 +9,7 @@
      NVDB, kart    aldri cache - de er ferske eller ingenting
 */
 
-const CACHE = 'harmonisering-v1';
+const CACHE = 'harmonisering-v2';
 
 const CORE = [
   './',
@@ -70,15 +70,20 @@ async function friskFraCache(req) {
 /* Datasettet: ferskt nar vi har dekning */
 async function nettForst(req) {
   const c = await caches.open(CACHE);
+  let ctrl = null;
+  try { ctrl = new AbortController(); } catch (e) {}
+  const t = setTimeout(() => { try { ctrl && ctrl.abort(); } catch (e) {} }, 5000);
   try {
-    const svar = await fetch(req, { cache: 'no-store' });
+    const svar = await fetch(req, ctrl
+      ? { cache: 'no-store', signal: ctrl.signal }
+      : { cache: 'no-store' });
     if (svar && svar.ok) { await c.put(req, svar.clone()); return svar; }
     throw new Error('ikke ok');
   } catch (e) {
     const lagret = await c.match(req, { ignoreSearch: true });
     if (lagret) return lagret;
     throw e;
-  }
+  } finally { clearTimeout(t); }
 }
 
 /* Ovrige filer: cache forst, fyll pa etter hvert */

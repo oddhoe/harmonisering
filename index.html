@@ -443,6 +443,7 @@
    ============================================================ */
 
 const CFG_KEY='harm_cfg';
+const CFG_SRV_KEY='harm_cfg_server';   // siste datasett vi fikk fra serveren
 
 const DEFAULT_CFG={
   "id": "frk2026",
@@ -695,6 +696,17 @@ function saveCfg(c){
 
 let serverCfg=null;
 
+/* Halv dekning kan gjore at fetch henger i det uendelige. Da er det
+   bedre a gi opp og bruke det vi har enn a bli staaende og laste. */
+async function hentMedTidsgrense(url,ms){
+  let ctrl=null;
+  try{ ctrl=new AbortController(); }catch(e){}
+  const t=setTimeout(()=>{ try{ ctrl&&ctrl.abort(); }catch(e){} },ms);
+  try{
+    return await fetch(url, ctrl?{cache:'no-store',signal:ctrl.signal}:{cache:'no-store'});
+  } finally { clearTimeout(t); }
+}
+
 async function loadCfg(){
   let lokal=null;
   try{
@@ -702,10 +714,12 @@ async function loadCfg(){
     if(raw) lokal=normalizeCfg(JSON.parse(raw));
   }catch(e){}
   try{
-    const r=await fetch('harmonisering-data.json',{cache:'no-store'});
-    if(r.ok){
-      serverCfg=normalizeCfg(await r.json());
+    const r=await hentMedTidsgrense('harmonisering-data.json',8000);
+    if(r&&r.ok){
+      const tekst=await r.text();
+      serverCfg=normalizeCfg(JSON.parse(tekst));
       serverCfg._fromServer=true;
+      try{ localStorage.setItem(CFG_SRV_KEY,tekst); }catch(e){}
     }
   }catch(e){}
   /* Et datasett du har importert sjolv vinner, slik at du kan
@@ -713,6 +727,15 @@ async function loadCfg(){
      sa du ikkje blir gaande med utdaterte strekningar. */
   if(lokal) return lokal;
   if(serverCfg) return serverCfg;
+  /* Uten nett: bruk siste datasett vi fikk fra serveren */
+  try{
+    const raw=localStorage.getItem(CFG_SRV_KEY);
+    if(raw){
+      const c=normalizeCfg(JSON.parse(raw));
+      c._fromServer=true;
+      return c;
+    }
+  }catch(e){}
   return normalizeCfg(DEFAULT_CFG);
 }
 

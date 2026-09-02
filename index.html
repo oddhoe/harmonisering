@@ -428,6 +428,11 @@
   </div>
 </div>
 
+<div class="oppdater-linje" id="endring-linje" style="background:var(--amber)">
+  <div style="flex:1">Strekningene er endret. Tidligere registreringer er tatt vare på, men ikke hentet inn.</div>
+  <button onclick="lukkEndringsvarsel()">OK</button>
+</div>
+
 <div class="oppdater-linje" id="oppdater-linje">
   <div style="flex:1">Ny versjon av arbeidsskjemaet er lastet ned.</div>
   <button onclick="taIBrukNyVersjon()">Oppdater</button>
@@ -688,6 +693,13 @@ function applyCfg(c){
   if(sub) sub.textContent=(c.versjon?c.versjon+' \u00a0\u00b7\u00a0 ':'')+S.length+' strekninger'
     +(serverAvvik()?' \u00a0\u00b7\u00a0 lokalt datasett':'');
   renderQuicknav();
+  const e=document.getElementById('endring-linje');
+  if(e) e.classList.toggle('vis',strekningerEndret);
+}
+
+function lukkEndringsvarsel(){
+  const e=document.getElementById('endring-linje');
+  if(e) e.classList.remove('vis');
 }
 
 function saveCfg(c){
@@ -785,21 +797,38 @@ function esc(t){
   return String(t==null?'':t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
+let strekningerEndret=false;
+
+/* Identiteten til strekningene. Tittel og instruksjoner teller ikke
+   med, sa smaa rettelser i teksten beholder maledataene. */
+function datasettFingerprint(){
+  return S.map(s=>[s.veg,s.seg,s.meter,s.felt].join('|')).join(';');
+}
+
 /* Registreringer lagres per datasett, slik at 2026 og 2027
    kan ligge side om side uten a overskrive hverandre. */
 function lsSave(){
   if(!STORE) return;
   try{
-    localStorage.setItem(STORE,JSON.stringify({done,gpsDone,recData,logData,sel,planOrder,routePoints,gpsStatePasses:gpsState.passes,gpsStateTotalKm:gpsState.totalKm,gpsStateLastNear:gpsState.lastNear,gpsStateActiveId:gpsState.activeId}));
+    localStorage.setItem(STORE,JSON.stringify({fp:datasettFingerprint(),done,gpsDone,recData,logData,sel,planOrder,routePoints,gpsStatePasses:gpsState.passes,gpsStateTotalKm:gpsState.totalKm,gpsStateLastNear:gpsState.lastNear,gpsStateActiveId:gpsState.activeId}));
   }catch(e){}
 }
 
 function lsLoad(){
+  strekningerEndret=false;
   if(!STORE) return;
   try{
     const raw=localStorage.getItem(STORE);
     if(!raw) return;
     const d=JSON.parse(raw);
+    /* Er strekningene byttet ut under samme id, ville de lagrede
+       tallene havnet pa feil veg. Da tar vi vare pa dem i stedet. */
+    if(d.fp&&d.fp!==datasettFingerprint()){
+      strekningerEndret=true;
+      try{ localStorage.setItem(STORE+'_forrige',raw); }catch(e){}
+      if(d.routePoints) Object.assign(routePoints,d.routePoints);
+      return;
+    }
     if(d.done)      Object.assign(done,d.done);
     if(d.gpsDone)   Object.assign(gpsDone,d.gpsDone);
     if(d.recData)   Object.assign(recData,d.recData);

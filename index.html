@@ -361,7 +361,9 @@
       <div class="setup-card">
         <h3>Aktivt datasett</h3>
         <div id="cfg-info"></div>
-        <button class="setup-btn" onclick="exportCfg()">Last ned datasettet som JSON</button>
+        <button class="setup-btn primary" onclick="kopierCfg()">Kopier datasettet som JSON</button>
+        <button class="setup-btn" onclick="exportCfg()">Last ned som fil</button>
+        <div id="cfg-status"></div>
       </div>
 
       <div class="setup-card">
@@ -1657,15 +1659,43 @@ async function reloadFromServer(){
   }
 }
 
-function exportCfg(){
+function cfgJson(){
   const out=JSON.parse(JSON.stringify(CFG));
   delete out._fromServer;
   out.strekninger=out.strekninger.map(s=>{const c=Object.assign({},s);delete c.id;return c;});
-  const blob=new Blob([JSON.stringify(out,null,2)],{type:'application/json'});
+  return JSON.stringify(out,null,2);
+}
+
+function exportCfg(){
+  const blob=new Blob([cfgJson()],{type:'application/json'});
   const url=URL.createObjectURL(blob);
   const a=document.createElement('a');
   a.href=url; a.download=CFG.id+'-data.json'; a.click();
   URL.revokeObjectURL(url);
+}
+
+/* Snarvei for telefon: lim rett inn i GitHubs filredigering,
+   sa slipper du a laste ned og opp igjen. */
+function kopierCfg(){
+  const tekst=cfgJson();
+  const klart=()=>setStatus('cfg-status',
+    'Datasettet er kopiert. \u00c5pne harmonisering-data.json p\u00e5 GitHub, trykk blyanten, '
+    +'merk alt og lim inn. Husk \u00e5 committe.','ok');
+  if(navigator.clipboard&&navigator.clipboard.writeText){
+    navigator.clipboard.writeText(tekst).then(klart,()=>visJsonFelt(tekst));
+  }else{
+    visJsonFelt(tekst);
+  }
+}
+
+function visJsonFelt(tekst){
+  const el=document.getElementById('cfg-status');
+  if(!el) return;
+  el.innerHTML='<div class="setup-status st-info">Kopiering ble avvist av nettleseren. '
+    +'Merk teksten under og kopier den manuelt.</div>'
+    +'<textarea class="setup-ta" style="min-height:150px" readonly>'+esc(tekst)+'</textarea>';
+  const ta=el.querySelector('textarea');
+  if(ta){ ta.focus(); ta.select(); }
 }
 
 /* ---------------- PDF ---------------- */

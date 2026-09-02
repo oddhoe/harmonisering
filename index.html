@@ -757,7 +757,9 @@ async function loadCfg(){
      teste. Men da varslar Oppsett om at serveren har eit anna,
      sa du ikkje blir gaande med utdaterte strekningar. */
   if(lokal) return lokal;
-  if(serverCfg) return serverCfg;
+  /* Kopi, ikke selve serverobjektet: endrer du noe i det aktive
+     datasettet, skal ikke appens bilde av serveren endres med. */
+  if(serverCfg) return JSON.parse(JSON.stringify(serverCfg));
   /* Uten nett: bruk siste datasett vi fikk fra serveren */
   try{
     const raw=localStorage.getItem(CFG_SRV_KEY);
@@ -1677,9 +1679,20 @@ function renderSetup(){
 
   const pk=document.getElementById('pin-kort');
   if(pk){
+    /* Koden virker for andre forst nar den ligger i datasettet pa
+       serveren. Til da gjelder den bare her. */
+    const utlagt=!!(serverCfg&&serverCfg.pinHash&&serverCfg.pinHash===CFG.pinHash);
+    const advarsel=CFG.pinHash&&!utlagt
+      ? '<div class="setup-status st-err">Koden gjelder bare p\u00e5 denne enheten. '
+        +'Sj\u00e5f\u00f8rene f\u00e5r den f\u00f8rst n\u00e5r du kopierer datasettet og legger det ut '
+        +'som harmonisering-data.json.</div>'
+      : '';
     pk.innerHTML=CFG.pinHash
       ? '<h3>Oppsett er l\u00e5st</h3>'
-        +'<p>Sj\u00e5f\u00f8rene m\u00e5 ha koden for \u00e5 komme hit. Din enhet husker den.</p>'
+        +'<p>'+(utlagt
+            ? 'Koden er lagt ut. Sj\u00e5f\u00f8rene m\u00e5 ha den for \u00e5 komme hit. Din enhet husker den.'
+            : 'Koden er satt her, men ikke lagt ut enn\u00e5.')+'</p>'
+        +advarsel
         +'<button class="setup-btn" onclick="laasIgjen()">L\u00e5s igjen p\u00e5 denne enheten</button>'
         +'<button class="setup-btn warn" onclick="fjernPin()">Fjern koden</button>'
         +'<div id="pin-sett-status"></div>'
@@ -1757,8 +1770,9 @@ async function reloadFromServer(){
     const r=await fetch('harmonisering-data.json',{cache:'no-store'});
     if(!r.ok) throw new Error('Fant ikke harmonisering-data.json (HTTP '+r.status+')');
     const c=normalizeCfg(await r.json());
-    try{localStorage.removeItem(CFG_KEY);}catch(e){}
     c._fromServer=true;
+    serverCfg=JSON.parse(JSON.stringify(c));
+    try{localStorage.removeItem(CFG_KEY);}catch(e){}
     applyCfg(c);
     renderOverview();
     renderSetup();

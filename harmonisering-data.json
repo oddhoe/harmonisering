@@ -1,148 +1,143 @@
-{
-  "id": "frk2026",
-  "aar": 2026,
-  "tittel": "Fredrikstad 2026",
-  "versjon": "v.26.03.26",
-  "estKm": 68,
-  "filer": {
-    "metodefilPdf": "Metodefil_31_og_GeoJSON.pdf",
-    "metodefilZip": "Metodefil_31_og_GeoJSON.zip",
-    "boresightPdf": "boresight.pdf"
-  },
-  "parkering": {
-    "navn": "Apenesfjellet P-hus, Fredrikstad",
-    "sok": "St. Croix gate 30 1607 Fredrikstad"
-  },
-  "base": {
-    "navn": "St1 Sollibrua, Greåker",
-    "sok": "Solliveien 278 1719 Greaker"
-  },
-  "routePoints": {
-    "startNavn": "Apenesfjellet P-hus",
-    "startAdr": "St. Croix gate 30, Fredrikstad",
-    "sluttNavn": "St1 Sollibrua",
-    "sluttAdr": "Solliveien 278, Greåker"
-  },
-  "planOrder": [0, 2, 1, 3, 6, 5, 4],
-  "strekninger": [
-    {
-      "veg": "Fv112",
-      "seg": "S1D1",
-      "meter": "373–1373",
-      "felt": "F1",
-      "tittel": "Ref strekn – 1000 m",
-      "farge": "#185FA5",
-      "type": "Kalibrering",
-      "metode": "B",
-      "ukedag": "Mandag",
-      "lat": 59.27177718,
-      "lon": 11.02034298,
-      "kjoring": "2 x i felt 1 – 60 km/t. Plassering av bil over spor.",
-      "rapport": "Standard Rosita/nvdb rapport. Legg rapportfil inn i ViaPPS Analyse og før opp verdi i skjema. Sammenligne med andre operatører om mulig.",
-      "filter": null,
-      "notat": "Utfør dette på mandag! Kalibrering 1000 meter"
-    },
-    {
-      "veg": "Fv1086",
-      "seg": "S1D1",
-      "meter": "470–2280",
-      "felt": "F1",
-      "tittel": "Snorstrekning",
-      "farge": "#D85A30",
-      "type": "Snor",
-      "metode": "S",
-      "ukedag": null,
-      "lat": 59.32450156,
-      "lon": 10.89100841,
-      "kjoring": "3 x i felt 1 i 60 km/t. Plassering av bil 10–15 cm fra kant/kantlinje.",
-      "rapport": "Standard Rosita/nvdb rapport.",
-      "filter": "m530–2230",
-      "notat": null
-    },
-    {
-      "veg": "Fv1104",
-      "seg": "S2D1",
-      "meter": "200–1300",
-      "felt": "F1",
-      "tittel": "Snorstrekning (dårlig dekke)",
-      "farge": "#D85A30",
-      "type": "Snor",
-      "metode": "S",
-      "ukedag": null,
-      "lat": 59.25470643,
-      "lon": 10.86654173,
-      "kjoring": "3 x i felt 1 i 60 km/t. Plassering av bil 10–15 cm fra kant/kantlinje.",
-      "rapport": "Standard Rosita/nvdb rapport.",
-      "filter": "m250–1150",
-      "notat": "Dårlig dekke"
-    },
-    {
-      "veg": "Fv279",
-      "seg": "S1D1",
-      "meter": "100–4550",
-      "felt": "F1",
-      "tittel": "Lang strekning",
-      "farge": "#0F6E56",
-      "type": "Lang",
-      "metode": "B",
-      "ukedag": null,
-      "lat": 59.34575843,
-      "lon": 10.93239097,
-      "kjoring": "3 x i felt 1 i 60 km/t. Plassering av bil over spor.",
-      "rapport": "Standard Rosita/nvdb rapport.",
-      "filter": "m150–4500",
-      "notat": null
-    },
-    {
-      "veg": "Fv107",
-      "seg": "S3D1",
-      "meter": "450–2300",
-      "felt": "F1",
-      "tittel": "Nylagt i 2025",
-      "farge": "#3B6D11",
-      "type": "NY",
-      "metode": "B",
-      "ukedag": null,
-      "lat": 59.22950026,
-      "lon": 11.05054215,
-      "kjoring": "3 x i felt 1 i 60 km/t. Plassering av bil over spor.",
-      "rapport": "Initialrapport for registrering i 60 km/t.",
-      "filter": "m500–2250",
-      "notat": "NB! Nedfrest oppmerking"
-    },
-    {
-      "veg": "Ev6",
-      "seg": "S5D1",
-      "meter": "3972–3110",
-      "felt": "F6",
-      "tittel": "Kontroll av vegbilder",
-      "farge": "#534AB7",
-      "type": "Foto",
-      "metode": null,
-      "ukedag": null,
-      "lat": 59.31602556,
-      "lon": 11.00078994,
-      "kjoring": "Start registrering ca 100 m før tunnelen – 60 km/t. Stopp 100 m etter tunnel.",
-      "rapport": "Fotostruktur rapport. Sjekk liming og lysforhold.",
-      "filter": null,
-      "notat": "Legg inn posisjon før du kjører ut på E6"
-    },
-    {
-      "veg": "Fv118",
-      "seg": "S7D1",
-      "meter": "110–2360",
-      "felt": "F1",
-      "tittel": "Kontroll spor/Applanix",
-      "farge": "#185FA5",
-      "type": "Kontroll",
-      "metode": "B",
-      "ukedag": null,
-      "lat": 59.32671265,
-      "lon": 10.95516864,
-      "kjoring": "3 x i felt 1 i 60 km/t. Plassering av bil over spor.",
-      "rapport": "Standard Rosita/nvdb rapport.",
-      "filter": "m160–2310",
-      "notat": null
-    }
-  ]
-}
+	
+id	"harmonisering2027"
+aar	2027
+tittel	"Harmonisering 2027"
+versjon	"v.26.03.26"
+estKm	null
+filer	
+metodefilPdf	"Metodefil_31_og_GeoJSON.pdf"
+metodefilZip	"Metodefil_31_og_GeoJSON.zip"
+boresightPdf	"boresight.pdf"
+parkering	
+navn	"Apenesfjellet P-hus, Fredrikstad"
+sok	"St. Croix gate 30 1607 Fredrikstad"
+base	
+navn	"St1 Sollibrua, Greåker"
+sok	"Solliveien 278 1719 Greaker"
+routePoints	
+startNavn	"Apenesfjellet P-hus"
+startAdr	"St. Croix gate 30, Fredrikstad"
+sluttNavn	"St1 Sollibrua"
+sluttAdr	"Solliveien 278, Greåker"
+strekninger	
+0	
+veg	"Fv112"
+seg	"S1D1"
+meter	"373–1373"
+felt	"F1"
+tittel	"Ref strekn – 1000 meter"
+farge	"#185FA5"
+type	"Kalibrering"
+metode	"B"
+ukedag	"Mandag"
+lat	59.27177718
+lon	11.02034298
+kjoring	"2 x i felt 1 – 60 km/t. Plassering av bil – over spor."
+rapport	"Produser standard Rosita / nvdb rapport. Legg rapportfil inn i ViaPPS Analyse og før opp verdi i skjema. Sammenligne med andre operatører om det er mulig."
+filter	null
+notat	"Utfør dette på mandag! Kalibrering 1000 meter"
+1	
+veg	"Fv1086"
+seg	"S1D1"
+meter	"450–2280"
+felt	"F1"
+tittel	"Snorstrekning"
+farge	"#D85A30"
+type	"Snor"
+metode	"S"
+ukedag	null
+lat	59.32445311
+lon	10.89067038
+kjoring	"3 x i felt 1 i 60 km/t. Plassering av bil 10 - 15 cm fra kant/kantlinje."
+rapport	"Produser standard Rosita / nvdb rapport."
+filter	"m530–2230"
+notat	null
+2	
+veg	"Fv1104"
+seg	"S2D1"
+meter	"200–1300"
+felt	"F1"
+tittel	"Snorstrekning (dårlig dekke)"
+farge	"#0F6E56"
+type	"Snor"
+metode	"S"
+ukedag	null
+lat	59.25470643
+lon	10.86654173
+kjoring	"3 x i felt 1 i 60 km/t. Plassering av bil 10 - 15 cm fra kant/kantlinje."
+rapport	"Produser standard Rosita / nvdb rapport."
+filter	"m250–1150"
+notat	null
+3	
+veg	"Fv279"
+seg	"S1D1"
+meter	"100–4550"
+felt	"F1"
+tittel	"Lang strekning"
+farge	"#3B6D11"
+type	"Lang"
+metode	"B"
+ukedag	null
+lat	59.34575843
+lon	10.93239097
+kjoring	"3 x i felt 1 i 60 km/t. Plassering av bil – over spor."
+rapport	"Produser standard Rosita / nvdb rapport."
+filter	"m150–4500"
+notat	null
+4	
+veg	"Fv107"
+seg	"S3D1"
+meter	"450–2300"
+felt	"F1"
+tittel	"Nylagt i 2025"
+farge	"#534AB7"
+type	"NY"
+metode	"B"
+ukedag	null
+lat	59.22950026
+lon	11.05054215
+kjoring	"3 x i felt 1 i 60 km/t. Plassering av bil – over spor."
+rapport	"Produser initialrapport for registrering i 60 km/t ."
+filter	"m500–2250"
+notat	"NB! nedfrest oppmerking"
+5	
+veg	"Ev6"
+seg	"S5D1"
+meter	"3972–3110"
+felt	"F6"
+tittel	"Kontroll av vegbilder"
+farge	"#BA7517"
+type	"Foto"
+metode	null
+ukedag	null
+lat	59.31602556
+lon	11.00078994
+kjoring	"Start registrering ca 100 meter før tunnelen – 60 km/t. Stopp registring 100 meter etter tunnel."
+rapport	"Produser fotostruktur rapport. Sjekk liming og lysforhold"
+filter	null
+notat	"Legg inn posisjon før du kjører ut på E6."
+6	
+veg	"Fv118"
+seg	"S7D1"
+meter	"110–2360"
+felt	"F1"
+tittel	"Kontroll av spor og applanix"
+farge	"#A32D2D"
+type	"Kontroll"
+metode	"B"
+ukedag	null
+lat	59.32671265
+lon	10.95516864
+kjoring	"3 x i felt 1 i 60 km/t. Plassering av bil – over spor."
+rapport	"Produser standard Rosita / nvdb rapport."
+filter	"m160–2310"
+notat	null
+planOrder	
+0	0
+1	1
+2	2
+3	3
+4	4
+5	5
+6	6
+filer

@@ -354,7 +354,23 @@
   </div>
 
   <div class="content" id="tab-setup">
-    <div class="setup-wrap">
+    <div class="setup-wrap" id="lock-wrap" style="display:none">
+      <div class="setup-card" style="text-align:center">
+        <div style="font-size:34px;margin-bottom:6px">&#128274;</div>
+        <h3>Oppsett er låst</h3>
+        <p>Her endres kjøreruten for alle. Trenger du inn, spør den som har koden.</p>
+        <input id="pin-inn" type="password" inputmode="numeric" autocomplete="off"
+          placeholder="Kode" onkeydown="if(event.key==='Enter')laasOpp()"
+          style="width:100%;border:0.5px solid var(--border);border-radius:10px;
+          padding:11px 12px;font-size:16px;font-family:inherit;background:#F9F9F9;text-align:center">
+        <button class="setup-btn primary" onclick="laasOpp()">Lås opp</button>
+        <div id="pin-status"></div>
+      </div>
+    </div>
+
+    <div class="setup-wrap" id="setup-wrap">
+
+      <div class="setup-card" id="pin-kort"></div>
 
       <div id="server-varsel"></div>
 
@@ -640,6 +656,7 @@ function normalizeCfg(c){
     parkering: Object.assign({navn:'',sok:''}, c.parkering||{}),
     base:      Object.assign({navn:'',sok:''}, c.base||{}),
     routePoints: Object.assign({startNavn:'',startAdr:'',sluttNavn:'',sluttAdr:''}, c.routePoints||{}),
+    pinHash: c.pinHash||null,
     strekninger: []
   };
   if(!out.id) out.id='harm';
@@ -1583,7 +1600,99 @@ function setStatus(elId,msg,kind){
   return n;
 }
 
+/* ---- PIN-sperre for Oppsett ----------------------------------
+   Alt ligger i en offentlig fil, sa dette stopper uhell, ikke en
+   som vil inn. Hashen lagres i datasettet, aldri koden selv. */
+
+const LAAS_KEY='harm_laasopp';
+
+async function pinHash(pin){
+  if(!(window.crypto&&crypto.subtle)) return null;
+  /* Fast salt, ikke CFG.id: hashen folger datasettet inn i neste
+     ar, og da maa samme kode fortsatt validere mot den. */
+  const data=new TextEncoder().encode('harmonisering:'+pin);
+  const buf=await crypto.subtle.digest('SHA-256',data);
+  return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
+}
+
+function erLaast(){
+  if(!CFG||!CFG.pinHash) return false;
+  try{ if(localStorage.getItem(LAAS_KEY)===CFG.pinHash) return false; }catch(e){}
+  return true;
+}
+
+async function laasOpp(){
+  const inp=document.getElementById('pin-inn');
+  const pin=inp?inp.value:'';
+  if(!pin){ setStatus('pin-status','Skriv inn koden.','err'); return; }
+  const h=await pinHash(pin);
+  if(h&&h===CFG.pinHash){
+    try{ localStorage.setItem(LAAS_KEY,CFG.pinHash); }catch(e){}
+    if(inp) inp.value='';
+    setStatus('pin-status','','info');
+    renderSetup();
+  }else{
+    if(inp) inp.value='';
+    setStatus('pin-status','Feil kode.','err');
+  }
+}
+
+function laasIgjen(){
+  try{ localStorage.removeItem(LAAS_KEY); }catch(e){}
+  renderSetup();
+}
+
+async function settPin(){
+  const a=document.getElementById('pin-ny');
+  const pin=(a?a.value:'').trim();
+  if(pin.length<4){ setStatus('pin-sett-status','Bruk minst fire tegn.','err'); return; }
+  const h=await pinHash(pin);
+  if(!h){ setStatus('pin-sett-status','Nettleseren st\u00f8tter ikke dette her. Kr\u00e6ver https.','err'); return; }
+  CFG.pinHash=h;
+  saveCfg(CFG);
+  try{ localStorage.setItem(LAAS_KEY,h); }catch(e){}
+  if(a) a.value='';
+  setStatus('pin-sett-status','Koden er satt. Den gjelder f\u00f8rst for sj\u00e5f\u00f8rene n\u00e5r du '
+    +'kopierer datasettet og legger det ut.','ok');
+  renderSetup();
+}
+
+function fjernPin(){
+  if(!confirm('Fjerne koden? Da blir Oppsett \u00e5pent for alle igjen.')) return;
+  CFG.pinHash=null;
+  saveCfg(CFG);
+  try{ localStorage.removeItem(LAAS_KEY); }catch(e){}
+  setStatus('pin-sett-status','Koden er fjernet. Legg ut datasettet p\u00e5 nytt for at '
+    +'det skal gjelde sj\u00e5f\u00f8rene.','ok');
+  renderSetup();
+}
+
 function renderSetup(){
+  const laast=erLaast();
+  const l=document.getElementById('lock-wrap');
+  const w=document.getElementById('setup-wrap');
+  if(l) l.style.display=laast?'block':'none';
+  if(w) w.style.display=laast?'none':'block';
+  if(laast) return;
+
+  const pk=document.getElementById('pin-kort');
+  if(pk){
+    pk.innerHTML=CFG.pinHash
+      ? '<h3>Oppsett er l\u00e5st</h3>'
+        +'<p>Sj\u00e5f\u00f8rene m\u00e5 ha koden for \u00e5 komme hit. Din enhet husker den.</p>'
+        +'<button class="setup-btn" onclick="laasIgjen()">L\u00e5s igjen p\u00e5 denne enheten</button>'
+        +'<button class="setup-btn warn" onclick="fjernPin()">Fjern koden</button>'
+        +'<div id="pin-sett-status"></div>'
+      : '<h3>L\u00e5s oppsettet</h3>'
+        +'<p>Hindrer at noen endrer datasettet ved et uhell. Koden lagres som hash i '
+        +'datasettet, og gjelder f\u00f8rst n\u00e5r du legger det ut.</p>'
+        +'<input id="pin-ny" type="password" inputmode="numeric" autocomplete="off" '
+        +'placeholder="Minst fire tegn" style="width:100%;border:0.5px solid var(--border);'
+        +'border-radius:10px;padding:11px 12px;font-size:16px;font-family:inherit;background:#F9F9F9">'
+        +'<button class="setup-btn primary" onclick="settPin()">Sett kode</button>'
+        +'<div id="pin-sett-status"></div>';
+  }
+
   const varsel=document.getElementById('server-varsel');
   if(varsel){
     varsel.innerHTML=serverAvvik()

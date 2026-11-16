@@ -9,7 +9,8 @@
      NVDB, kart    aldri cache - de er ferske eller ingenting
 */
 
-const CACHE = 'harmonisering-v2';
+const CACHE = 'harmonisering-v3';
+const FORRIGE_CACHE = 'harmonisering-v2';
 
 const CORE = [
   './',
@@ -28,14 +29,22 @@ self.addEventListener('install', e => {
     await Promise.all(CORE.map(u =>
       c.add(new Request(u, { cache: 'reload' })).catch(() => {})
     ));
+    // Behold blant annet vedlegg som er lastet ned med «Gjør klar for felt».
+    if (await caches.has(FORRIGE_CACHE)) {
+      const forrige = await caches.open(FORRIGE_CACHE);
+      for (const req of await forrige.keys()) {
+        if (await c.match(req)) continue;
+        const svar = await forrige.match(req);
+        if (svar) await c.put(req, svar);
+      }
+    }
     await self.skipWaiting();
   })());
 });
 
 self.addEventListener('activate', e => {
   e.waitUntil((async () => {
-    const navn = await caches.keys();
-    await Promise.all(navn.filter(n => n !== CACHE).map(n => caches.delete(n)));
+    await caches.delete(FORRIGE_CACHE);
     await self.clients.claim();
   })());
 });
@@ -68,6 +77,12 @@ async function friskFraCache(req) {
 }
 
 /* Datasettet: ferskt nar vi har dekning */
+function medDatasettkilde(svar, kilde) {
+  const headers = new Headers(svar.headers);
+  headers.set('X-Harmonisering-Kilde', kilde);
+  return new Response(svar.body, {status: svar.status, statusText: svar.statusText, headers});
+}
+
 async function nettForst(req) {
   const c = await caches.open(CACHE);
   let ctrl = null;
@@ -77,11 +92,14 @@ async function nettForst(req) {
     const svar = await fetch(req, ctrl
       ? { cache: 'no-store', signal: ctrl.signal }
       : { cache: 'no-store' });
-    if (svar && svar.ok) { await c.put(req, svar.clone()); return svar; }
+    if (svar && svar.ok) {
+      await c.put(req, svar.clone()).catch(() => {});
+      return medDatasettkilde(svar, 'nett');
+    }
     throw new Error('ikke ok');
   } catch (e) {
     const lagret = await c.match(req, { ignoreSearch: true });
-    if (lagret) return lagret;
+    if (lagret) return medDatasettkilde(lagret, 'cache');
     throw e;
   } finally { clearTimeout(t); }
 }

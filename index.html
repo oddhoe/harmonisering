@@ -92,6 +92,19 @@
   .tab.active{color:var(--blue)}
   .tab.active::after{content:'';position:absolute;bottom:0;left:10%;right:10%;height:2px;background:var(--blue);border-radius:2px}
 
+  .datasett-varsel{
+    flex-shrink:0;padding:9px 12px;background:var(--amber-l);color:#633709;
+    border-bottom:1px solid #E1BF8C;font-size:13px;line-height:1.4;
+    overflow-wrap:anywhere;
+  }
+  .datasett-varsel p+*{margin-top:4px}
+  .datasett-varsel button{
+    min-height:44px;margin:5px 6px 0 0;padding:6px 12px;border:0;
+    border-radius:9px;background:var(--blue-d);color:#fff;font:inherit;
+    font-weight:600;cursor:pointer;
+  }
+  .datasett-varsel button:disabled{opacity:.65;cursor:default}
+
   /* CONTENT */
   .content{flex:1;overflow-y:auto;display:none;-webkit-overflow-scrolling:touch}
   .content.active{display:block}
@@ -212,12 +225,15 @@
   .log-row label{font-size:13px;color:var(--text2);flex:1}
   .log-row input{
     border:0.5px solid var(--border);border-radius:8px;
-    padding:7px 10px;font-size:14px;
+    padding:7px 10px;font-size:16px;
     background:#F9F9F9;color:var(--text);
     font-family:inherit;text-align:right;
-    width:120px;-webkit-appearance:none;
+    width:120px;min-width:0;max-width:100%;-webkit-appearance:none;
   }
+  .log-row input[type=date]{width:10.5rem}
+  .log-row input[type=number]{width:5rem}
   .log-row input[type=text]{text-align:left;width:150px}
+  .log-row input:invalid{border-color:var(--red)}
 
   /* SAFETY */
   .safety-wrap{padding:12px;padding-bottom:max(12px,env(safe-area-inset-bottom))}
@@ -256,6 +272,7 @@
     margin-top:8px;
   }
   .setup-btn:active{opacity:.8}
+  .setup-btn[hidden]{display:none}
   .setup-btn.primary{background:var(--blue);border-color:var(--blue);color:#fff}
   .setup-btn.warn{background:var(--amber-l);border-color:rgba(186,117,23,.25);color:var(--amber)}
   .setup-file{display:none}
@@ -329,6 +346,17 @@
     <button class="tab" onclick="showTab('setup')">Oppsett</button>
   </div>
 
+  <div class="datasett-varsel" id="server-varsel" hidden>
+    <p id="server-varsel-info" role="status"></p>
+    <button type="button" id="bruk-server" onclick="velgServerhandling()">Bruk serverruta</button>
+  </div>
+  <div class="datasett-varsel" id="datasett-status" hidden>
+    <p id="datasett-melding" role="status"></p>
+    <button type="button" id="last-ned-forrige" onclick="lastNedForrigeRute()" hidden>Last ned tidligere målinger og logg</button>
+    <button type="button" onclick="this.parentElement.hidden=true">Lukk</button>
+  </div>
+  <p class="datasett-varsel" id="lagringsvarsel" role="status" hidden></p>
+
   <div class="content active" id="tab-overview">
     <div style="padding:12px 12px 0">
       <div id="quicknav"></div>
@@ -372,8 +400,6 @@
 
       <div class="setup-card" id="pin-kort"></div>
 
-      <div id="server-varsel"></div>
-
       <div class="setup-card">
         <h3>Aktivt datasett</h3>
         <div id="cfg-info"></div>
@@ -397,6 +423,7 @@
         <textarea class="setup-ta" id="paste-json" placeholder="... eller lim inn JSON her" style="margin-top:10px"></textarea>
         <button class="setup-btn" onclick="applyPastedJson()">Bruk innlimt JSON</button>
         <button class="setup-btn" onclick="reloadFromServer()">Hent datasett fra server på nytt</button>
+        <button class="setup-btn" id="bruk-lokalt" onclick="brukLagretLokalt()" hidden>Bruk lagret lokalt datasett</button>
         <div id="json-status"></div>
       </div>
 
@@ -446,11 +473,6 @@
   </div>
 </div>
 
-<div class="oppdater-linje" id="endring-linje" style="background:var(--amber)">
-  <div style="flex:1">Strekningene er endret. Tidligere registreringer er tatt vare på, men ikke hentet inn.</div>
-  <button onclick="lukkEndringsvarsel()">OK</button>
-</div>
-
 <div class="oppdater-linje" id="oppdater-linje">
   <div style="flex:1">Ny versjon av arbeidsskjemaet er lastet ned.</div>
   <button onclick="taIBrukNyVersjon()">Oppdater</button>
@@ -459,14 +481,13 @@
 <script>
 /* ============================================================
    DATALAG
-   Alt aarsspesifikt ligger i CFG. Rekkefolge ved oppstart:
-     1. localStorage  (datasett du har importert i appen)
-     2. harmonisering-data.json  (samme mappe paa serveren)
-     3. DEFAULT_CFG   (innebygd, 2026)
+   Lokalt importert rute og sist valgte serverrute lagres side om side.
+   På en ny enhet brukes serverruta hvis den finnes, ellers innebygd rute.
    ============================================================ */
 
 const CFG_KEY='harm_cfg';
-const CFG_SRV_KEY='harm_cfg_server';   // siste datasett vi fikk fra serveren
+const CFG_SRV_KEY='harm_cfg_server';
+const CFG_VALG_KEY='harm_cfg_valg';
 
 const DEFAULT_CFG={
   "id": "frk2026",
@@ -628,11 +649,18 @@ const DEFAULT_CFG={
 let CFG=null;
 let S=[];
 let STORE='';
+let cfgValg=null;
+let serverCfg=null;
+let serverBekreftet=false;
+let serverHenting=null;
+let serverByttePaagar=false;
+let forrigeRute=null;
 
 const done={};
-const gpsDone={};
+const gpsDone={}; // Tidligere GPS-anslag beholdes i lagringen.
 const recData={};
 const logData={};
+const LOG_FIELDS=['dato','start','slutt','antall','kommentar'];
 const planOrder=[];
 const routePoints={startNavn:'',startAdr:'',sluttNavn:'',sluttAdr:''};
 
@@ -686,17 +714,24 @@ function normalizeCfg(c){
   return out;
 }
 
-/* Tar et normalisert datasett i bruk (uten a lagre det) */
-function applyCfg(c){
+/* Det aktive datasettet og servergrunnlaget må kunne endres uavhengig. */
+function applyCfg(c,forrige){
+  c=JSON.parse(JSON.stringify(c));
   CFG=c;
   S=c.strekninger;
-  STORE='harm_'+c.id;
+  STORE=rutenokkel(c);
   planOrder.splice(0,planOrder.length,...c.planOrder);
+  for(const k in routePoints) delete routePoints[k];
   Object.assign(routePoints,c.routePoints);
   for(const k in done)    delete done[k];
   for(const k in gpsDone) delete gpsDone[k];
   for(const k in recData) delete recData[k];
   for(const k in logData) delete logData[k];
+  gpsState.passes={};
+  gpsState.totalKm=0;
+  gpsState.activeId=null;
+  gpsState.lastPos=null;
+  gpsState._saveCnt=0;
   S.forEach(s=>{
     done[s.id]=false;
     gpsDone[s.id]=false;
@@ -704,78 +739,140 @@ function applyCfg(c){
     logData[s.id]={dato:'',start:'',slutt:'',antall:'',kommentar:''};
   });
   sel=0;
-  lsLoad();
+  lsLoad(forrige);
   document.title=c.tittel;
-  const h=document.getElementById('hdr-tittel');
-  const sub=document.getElementById('hdr-sub');
-  if(h) h.textContent=c.tittel;
-  if(sub) sub.textContent=(c.versjon?c.versjon+' \u00a0\u00b7\u00a0 ':'')+S.length+' strekninger'
-    +(serverAvvik()?' \u00a0\u00b7\u00a0 lokalt datasett':'');
+  document.getElementById('hdr-tittel').textContent=c.tittel;
+  renderDatasettvarsel();
   renderQuicknav();
-  const e=document.getElementById('endring-linje');
-  if(e) e.classList.toggle('vis',strekningerEndret);
 }
 
-function lukkEndringsvarsel(){
-  const e=document.getElementById('endring-linje');
-  if(e) e.classList.remove('vis');
-}
-
-function saveCfg(c){
-  try{localStorage.setItem(CFG_KEY,JSON.stringify(c));}catch(e){}
-}
-
-let serverCfg=null;
-
-/* Halv dekning kan gjore at fetch henger i det uendelige. Da er det
-   bedre a gi opp og bruke det vi har enn a bli staaende og laste. */
-async function hentMedTidsgrense(url,ms){
-  let ctrl=null;
-  try{ ctrl=new AbortController(); }catch(e){}
-  const t=setTimeout(()=>{ try{ ctrl&&ctrl.abort(); }catch(e){} },ms);
+function lesDatasettvalg(){
   try{
-    return await fetch(url, ctrl?{cache:'no-store',signal:ctrl.signal}:{cache:'no-store'});
-  } finally { clearTimeout(t); }
+    const valg=JSON.parse(localStorage.getItem(CFG_VALG_KEY));
+    if(valg && (valg.kilde==='lokal'||valg.kilde==='server')){
+      return {kilde:valg.kilde,
+        lokal:valg.lokal?normalizeCfg(valg.lokal):null,
+        server:valg.server?normalizeCfg(valg.server):null};
+    }
+  }catch(e){}
+  const lesCfg=nokkel=>{
+    try{ return normalizeCfg(JSON.parse(localStorage.getItem(nokkel))); }
+    catch(e){ return null; }
+  };
+  const lokal=lesCfg(CFG_KEY);
+  const server=lesCfg(CFG_SRV_KEY);
+  return {kilde:lokal?'lokal':server?'server':'standard',lokal,server};
+}
+
+function lagreDatasettvalg(valg){
+  try{ localStorage.setItem(CFG_VALG_KEY,JSON.stringify(valg)); }
+  catch(e){ throw new Error('Kunne ikke lagre datasettvalget på denne enheten.'); }
+  cfgValg=valg;
+}
+
+/* Oppsett kan justere PIN og koordinater i en lokal kopi av aktiv rute. */
+function saveCfg(c){
+  lagreDatasettvalg({...lesDatasettvalg(),kilde:'lokal',lokal:c});
+  CFG=c;
+  S=c.strekninger;
+  renderDatasettvarsel();
+}
+
+async function hentServerdata(){
+  const ctrl=new AbortController();
+  const t=setTimeout(()=>ctrl.abort(),8000);
+  const harWorker=!!navigator.serviceWorker?.controller;
+  try{
+    const r=await fetch('harmonisering-data.json',{cache:'no-store',signal:ctrl.signal});
+    if(!r.ok) return false;
+    const c=normalizeCfg(await r.json());
+    const kilde=r.headers.get('X-Harmonisering-Kilde');
+    // En eldre service worker kan returnere en umerket kopi ved nettfeil.
+    const fersk=kilde==='nett'||(!harWorker&&!kilde);
+    if(fersk||!serverCfg) serverCfg=c;
+    return fersk;
+  }catch(e){ return false; }
+  finally{ clearTimeout(t); }
+}
+
+function sjekkServerdata(){
+  if(!serverHenting){
+    serverHenting=hentServerdata().then(fersk=>{
+      serverBekreftet=fersk;
+      serverHenting=null;
+      renderDatasettvarsel();
+      return fersk;
+    });
+    renderDatasettvarsel();
+  }
+  return serverHenting;
 }
 
 async function loadCfg(){
-  let lokal=null;
-  try{
-    const raw=localStorage.getItem(CFG_KEY);
-    if(raw) lokal=normalizeCfg(JSON.parse(raw));
-  }catch(e){}
-  try{
-    const r=await hentMedTidsgrense('harmonisering-data.json',8000);
-    if(r&&r.ok){
-      const tekst=await r.text();
-      serverCfg=normalizeCfg(JSON.parse(tekst));
-      serverCfg._fromServer=true;
-      try{ localStorage.setItem(CFG_SRV_KEY,tekst); }catch(e){}
-    }
-  }catch(e){}
-  /* Et datasett du har importert sjolv vinner, slik at du kan
-     teste. Men da varslar Oppsett om at serveren har eit anna,
-     sa du ikkje blir gaande med utdaterte strekningar. */
-  if(lokal) return lokal;
-  /* Kopi, ikke selve serverobjektet: endrer du noe i det aktive
-     datasettet, skal ikke appens bilde av serveren endres med. */
-  if(serverCfg) return JSON.parse(JSON.stringify(serverCfg));
-  /* Uten nett: bruk siste datasett vi fikk fra serveren */
-  try{
-    const raw=localStorage.getItem(CFG_SRV_KEY);
-    if(raw){
-      const c=normalizeCfg(JSON.parse(raw));
-      c._fromServer=true;
-      return c;
-    }
-  }catch(e){}
-  return normalizeCfg(DEFAULT_CFG);
+  cfgValg=lesDatasettvalg();
+  serverCfg=cfgValg.server;
+  const standard=normalizeCfg(DEFAULT_CFG);
+  const lagret=cfgValg[cfgValg.kilde];
+  if(lagret){
+    applyCfg(lagret,lagret);
+    sjekkServerdata();
+    return;
+  }
+  await sjekkServerdata();
+  if(serverCfg){
+    const valg={...cfgValg,kilde:'server',server:serverCfg};
+    try{ lagreDatasettvalg(valg); }
+    catch(e){ cfgValg=valg; visDatasettstatus(e.message); }
+  }
+  applyCfg(serverCfg||standard,standard);
 }
 
-/* Sant nar appen viser eit lokalt datasett og serveren har eit anna */
+/* Nøkkelrekkefølgen i objekter er vilkårlig. Lister beholder rekkefølgen. */
+function sortertJson(verdi){
+  return JSON.stringify(verdi,(k,v)=>{
+    if(!v||typeof v!=='object'||Array.isArray(v)) return v;
+    return Object.fromEntries(Object.keys(v).sort().map(nokkel=>[nokkel,v[nokkel]]));
+  });
+}
+
 function serverAvvik(){
-  if(!serverCfg||!CFG||CFG._fromServer) return false;
-  return serverCfg.id!==CFG.id||serverCfg.versjon!==CFG.versjon;
+  return !!(serverCfg&&CFG&&sortertJson(CFG)!==sortertJson(serverCfg));
+}
+
+function renderDatasettvarsel(){
+  if(!CFG) return;
+  const kilde={lokal:'Lokalt datasett',server:'Serverrute',standard:'Innebygd datasett'}[cfgValg.kilde];
+  document.getElementById('hdr-sub').textContent=[CFG.versjon,S.length+' strekninger',kilde].filter(Boolean).join(' · ');
+
+  const avvik=serverBekreftet&&serverAvvik();
+  const varsel=document.getElementById('server-varsel');
+  varsel.hidden=serverBekreftet&&!avvik;
+  if(varsel.hidden) return;
+  const btn=document.getElementById('bruk-server');
+  btn.disabled=!!serverHenting||serverByttePaagar;
+  btn.textContent=avvik?'Bruk serverruta':'Sjekk serverruta';
+  const serverNavn=serverCfg&&[serverCfg.tittel,serverCfg.versjon].filter(Boolean).join(' · ');
+  document.getElementById('server-varsel-info').textContent=serverHenting
+    ?'Kontrollerer serverruta …'
+    :avvik?'Serverruta «'+serverNavn+'» har annet innhold enn ruta i bruk.'
+    :'Kunne ikke kontrollere serverruta. Du bruker ruta som er lagret på enheten.';
+}
+
+function velgServerhandling(){
+  if(serverBekreftet&&serverAvvik()) reloadFromServer();
+  else sjekkServerdata();
+}
+
+function visDatasettstatus(melding,kopi=null){
+  forrigeRute=kopi;
+  document.getElementById('datasett-melding').textContent=melding;
+  document.getElementById('last-ned-forrige').hidden=!kopi;
+  document.getElementById('datasett-status').hidden=!melding;
+}
+
+function lastNedForrigeRute(){
+  if(!forrigeRute) return;
+  lastNedJson(JSON.stringify(forrigeRute,null,2),forrigeRute.datasett.id+'-tidligere-registreringer.json');
 }
 
 function renderQuicknav(){
@@ -818,74 +915,113 @@ function esc(t){
   return String(t==null?'':t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
-let strekningerEndret=false;
-
-/* Identiteten til strekningene. Tittel og instruksjoner teller ikke
-   med, sa smaa rettelser i teksten beholder maledataene. */
-function datasettFingerprint(){
-  return S.map(s=>[s.veg,s.seg,s.meter,s.felt].join('|')).join(';');
+/* Indeksene i registreringene skal peke på de samme strekningene.
+   Instruksjonsrettelser og endret kjørerekkefølge beholder registreringene. */
+function strekningerForLagring(c){
+  return c.strekninger.map(s=>[s.veg,s.seg,s.meter,s.felt]);
 }
 
-/* Registreringer lagres per datasett, slik at 2026 og 2027
-   kan ligge side om side uten a overskrive hverandre. */
+function rutenokkel(c){
+  return 'harm_rute:'+c.id+':'+JSON.stringify([String(c.aar),strekningerForLagring(c)]);
+}
+
+let sistLagret=null;
+
+function visLagringsvarsel(melding){
+  const el=document.getElementById('lagringsvarsel');
+  el.textContent=melding;
+  el.hidden=!melding;
+}
+
 function lsSave(){
-  if(!STORE) return;
+  if(!STORE) return false;
   try{
-    localStorage.setItem(STORE,JSON.stringify({fp:datasettFingerprint(),done,gpsDone,recData,logData,sel,planOrder,routePoints,gpsStatePasses:gpsState.passes,gpsStateTotalKm:gpsState.totalKm,gpsStateLastNear:gpsState.lastNear,gpsStateActiveId:gpsState.activeId}));
-  }catch(e){}
+    if(localStorage.getItem(STORE)!==sistLagret){
+      visLagringsvarsel('Registreringene er endret i en annen fane. Eksporter arbeidet her før du laster appen på nytt.');
+      return false;
+    }
+    const data=JSON.stringify({
+      done,gpsDone,recData,logData,sel,planOrder,routePoints,
+      planOrderBase:CFG.planOrder,routePointsBase:CFG.routePoints,
+      gpsStatePasses:gpsState.passes,gpsStateTotalKm:gpsState.totalKm
+    });
+    localStorage.setItem(STORE,data);
+    sistLagret=data;
+    visLagringsvarsel('');
+    return true;
+  }catch(e){
+    visLagringsvarsel('Kunne ikke lagre registreringene på enheten. Eksporter målinger og logg for å ta vare på dem.');
+    return false;
+  }
 }
 
-function lsLoad(){
-  strekningerEndret=false;
-  if(!STORE) return;
+function lesTidligereLagring(tryggRute){
+  const eldre='harm_'+CFG.id;
+  const fp=strekningerForLagring(CFG).map(rad=>rad.join('|')).join(';');
+  for(const nokkel of [eldre,eldre+'_forrige']){
+    try{
+      const d=JSON.parse(localStorage.getItem(nokkel));
+      // De første 2026-versjonene lagret uten fingeravtrykk.
+      if(d&&(d.fp===fp||(!d.fp&&nokkel===eldre&&tryggRute))) return d;
+    }catch(e){}
+  }
+  return null;
+}
+
+function lsLoad(forrige){
+  sistLagret=null;
+  visLagringsvarsel('');
   try{
-    const raw=localStorage.getItem(STORE);
-    if(!raw) return;
-    const d=JSON.parse(raw);
-    /* Er strekningene byttet ut under samme id, ville de lagrede
-       tallene havnet pa feil veg. Da tar vi vare pa dem i stedet. */
-    if(d.fp&&d.fp!==datasettFingerprint()){
-      strekningerEndret=true;
-      try{ localStorage.setItem(STORE+'_forrige',raw); }catch(e){}
-      if(d.routePoints) Object.assign(routePoints,d.routePoints);
-      return;
-    }
+    const tryggRute=forrige&&rutenokkel(forrige)===STORE;
+    const grunnlag=tryggRute?forrige:CFG;
+    sistLagret=localStorage.getItem(STORE);
+    const d=sistLagret?JSON.parse(sistLagret):lesTidligereLagring(tryggRute);
+    if(!d) return;
     if(d.done)      Object.assign(done,d.done);
     if(d.gpsDone)   Object.assign(gpsDone,d.gpsDone);
     if(d.recData)   Object.assign(recData,d.recData);
     if(d.logData)   Object.assign(logData,d.logData);
-    if(d.planOrder && d.planOrder.length===planOrder.length) planOrder.splice(0,planOrder.length,...d.planOrder);
-    if(d.routePoints) Object.assign(routePoints,d.routePoints);
+    if(Array.isArray(d.planOrder)&&d.planOrder.length===planOrder.length
+      &&sortertJson(d.planOrderBase||grunnlag.planOrder)===sortertJson(CFG.planOrder)){
+      planOrder.splice(0,planOrder.length,...d.planOrder);
+    }
+    if(d.routePoints&&sortertJson(d.routePointsBase||grunnlag.routePoints)===sortertJson(CFG.routePoints)){
+      Object.assign(routePoints,d.routePoints);
+    }
     if(d.sel!==undefined) sel=(d.sel>=0&&d.sel<S.length)?d.sel:0;
     if(d.gpsStatePasses) Object.assign(gpsState.passes,d.gpsStatePasses);
     if(d.gpsStateTotalKm) gpsState.totalKm=d.gpsStateTotalKm;
-    if(d.gpsStateLastNear) Object.assign(gpsState.lastNear,d.gpsStateLastNear);
-    if(d.gpsStateActiveId!==undefined) gpsState.activeId=d.gpsStateActiveId;
   }catch(e){}
 }
 
 let sel=0;
 
-lsLoad();
-
 function saveRec(id){
   document.querySelectorAll('.rec-input').forEach((inp,i)=>{
     recData[id][i]=inp.value;
   });
-  lsSave();
+  return lsSave();
+}
+
+function lesLoggfelt(id,navn,felt){
+  if(!felt.validity.valid) return false;
+  logData[id][navn]=felt.value;
+  return true;
 }
 
 function saveLog(){
   S.forEach(s=>{
     const card=document.querySelector(`.log-card[data-id="${s.id}"]`);
     if(!card) return;
-    logData[s.id].dato     = card.querySelector('.log-dato').value;
-    logData[s.id].start    = card.querySelector('.log-start').value;
-    logData[s.id].slutt    = card.querySelector('.log-slutt').value;
-    logData[s.id].antall   = card.querySelector('.log-antall').value;
-    logData[s.id].kommentar= card.querySelector('.log-kommentar').value;
+    for(const navn of LOG_FIELDS) lesLoggfelt(s.id,navn,card.querySelector('.log-'+navn));
   });
-  lsSave();
+  return lsSave();
+}
+
+function lagreAktivFane(){
+  if(document.getElementById('tab-detail').classList.contains('active')) return saveRec(sel);
+  if(document.getElementById('tab-log').classList.contains('active')) return saveLog();
+  return lsSave();
 }
 
 function mapLinks(s){
@@ -911,12 +1047,12 @@ function resetAll(){
   sel=0;
   planOrder.splice(0,planOrder.length,...CFG.planOrder);
   for(const k in gpsState.passes) delete gpsState.passes[k];
-  for(const k in gpsState.lastNear) delete gpsState.lastNear[k];
   gpsState.totalKm=0;
   gpsState.activeId=null;
   gpsState._saveCnt=0;
   Object.assign(routePoints,CFG.routePoints);
-  try{localStorage.removeItem(STORE);}catch(e){}
+  // En tom post hindrer at en eldre kopi gjenoppstår ved neste åpning.
+  lsSave();
   showTab('overview',true);
   renderOverview();
 }
@@ -933,7 +1069,7 @@ function exportCSV(){
 
   const cols_log=['Veg','Tittel','Fullfort','Dato','Starttid','Sluttid','Antall_kjoringer','Kommentar'];
 
-  function q(v){ return '"'+String(v||'').replace(/"/g,'""')+'"'; }
+  function q(v){ return '"'+String(v??'').replace(/"/g,'""')+'"'; }
 
   // Sheet 1 – registreringsskjema
   let rec=[cols_rec.join(';')];
@@ -971,7 +1107,6 @@ const gpsState={
   watchId:null,
   activeId:null,
   passes:{},
-  lastNear:{},
   totalKm:0,
   lastPos:null
 };
@@ -1008,6 +1143,7 @@ function startGPS(){
     return;
   }
   gpsState.watching=true;
+  const aktiv=CFG;
   gpsState.lastPos=null;
   routePoints.startNavn='Henter posisjon...';
   routePoints.startAdr='';
@@ -1022,6 +1158,7 @@ function startGPS(){
   );
   navigator.geolocation.getCurrentPosition(async pos=>{
     const{navn,adr}=await reverseGeocode(pos.coords.latitude,pos.coords.longitude);
+    if(CFG!==aktiv||!gpsState.watching) return;
     routePoints.startNavn=navn;
     routePoints.startAdr=adr;
     lsSave();
@@ -1031,21 +1168,21 @@ function startGPS(){
 }
 
 async function stopGPS(){
-  if(gpsState.lastPos){
-    routePoints.sluttNavn='Henter posisjon...';
-    routePoints.sluttAdr='';
-    if(document.getElementById('tab-plan').classList.contains('active')) renderPlan();
-    const{navn,adr}=await reverseGeocode(gpsState.lastPos[0],gpsState.lastPos[1]);
-    routePoints.sluttNavn=navn;
-    routePoints.sluttAdr=adr;
-    lsSave();
-  }
+  const aktiv=CFG;
+  const pos=gpsState.lastPos;
   navigator.geolocation.clearWatch(gpsState.watchId);
   gpsState.watching=false;
   gpsState.watchId=null;
   gpsState.activeId=null;
   gpsState.lastPos=null;
   gpsState._saveCnt=0;
+  lsSave();
+  if(document.getElementById('tab-plan').classList.contains('active')) renderPlan();
+  if(!pos) return;
+  const{navn,adr}=await reverseGeocode(pos[0],pos[1]);
+  if(CFG!==aktiv||gpsState.watching) return;
+  routePoints.sluttNavn=navn;
+  routePoints.sluttAdr=adr;
   lsSave();
   if(document.getElementById('tab-plan').classList.contains('active')) renderPlan();
 }
@@ -1067,25 +1204,9 @@ function distM(lat1,lon1,lat2,lon2){
   return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
 }
 
-function autoUpdateLogDOM(id){
-  if(!document.getElementById('tab-log').classList.contains('active')) return;
-  const card=document.querySelector(`.log-card[data-id="${id}"]`);
-  if(!card) return;
-  const l=logData[id];
-  const dato=card.querySelector('.log-dato');
-  const start=card.querySelector('.log-start');
-  const slutt=card.querySelector('.log-slutt');
-  const antall=card.querySelector('.log-antall');
-  if(dato&&l.dato) dato.value=l.dato;
-  if(start&&l.start) start.value=l.start;
-  if(slutt&&l.slutt) slutt.value=l.slutt;
-  if(antall&&l.antall) antall.value=l.antall;
-}
 function onGpsPosition(pos){
   const lat=pos.coords.latitude;
   const lon=pos.coords.longitude;
-  const NEAR=300;
-  const FAR=500;
 
   if(gpsState.lastPos){
     const d=distM(gpsState.lastPos[0],gpsState.lastPos[1],lat,lon);
@@ -1098,42 +1219,19 @@ function onGpsPosition(pos){
   }
   gpsState.lastPos=[lat,lon];
 
-  planOrder.forEach(id=>{
-    if(done[id]) return;
+  // Koordinatene gjelder startpunktet. Nærhet brukes bare til veiledning.
+  let naermesteId=null;
+  let naermesteMeter=300;
+  for(const id of planOrder){
     const s=S[id];
+    if(!s||done[id]||(!s.lat&&!s.lon)) continue;
     const dist=distM(lat,lon,s.lat,s.lon);
-    const wasNear=gpsState.lastNear[id]||false;
-    const isNear=dist<NEAR;
-
-    if(isNear){
-      gpsState.lastNear[id]=true;
-      if(gpsState.activeId===null) gpsState.activeId=id;
-      // Auto-logg: sett dato + starttid ved første inntreden
-      if(!logData[id].start){
-        const _t=new Date();
-        logData[id].dato=_t.toISOString().slice(0,10);
-        logData[id].start=_t.toTimeString().slice(0,5);
-        autoUpdateLogDOM(id);
-        lsSave();
-      }
-    } else if(wasNear && dist>FAR && gpsState.activeId===id){
-      gpsState.lastNear[id]=false;
-      gpsState.activeId=null;
-      if(!gpsState.passes[id]) gpsState.passes[id]=0;
-      gpsState.passes[id]++;
-      // Auto-logg: oppdater sluttid og antall etter hvert pass
-      const _t2=new Date();
-      logData[id].slutt=_t2.toTimeString().slice(0,5);
-      logData[id].antall=String(gpsState.passes[id]);
-      autoUpdateLogDOM(id);
-      if(gpsState.passes[id]>=3){
-        gpsDone[id]=true;
-        gpsState.passes[id]=0;
-        logData[id].antall='3';
-      }
-      lsSave();
+    if(dist<naermesteMeter){
+      naermesteId=id;
+      naermesteMeter=dist;
     }
-  });
+  }
+  gpsState.activeId=naermesteId;
 
   if(document.getElementById('tab-plan').classList.contains('active')) renderPlan();
 }
@@ -1181,7 +1279,7 @@ function renderPlan(){
         </div>
         <button onclick="toggleGPS()" style="background:${gpsBtnBg};color:${gpsBtnColor};border:none;border-radius:8px;padding:6px 12px;font-size:12px;font-weight:600;font-family:inherit;cursor:pointer">${gpsBtnLabel}</button>
       </div>
-      <div style="font-size:11px;color:var(--text3);margin-top:6px">Pilene endrer rekkefølge · GPS markerer automatisk "Kjørt"</div>
+      <div style="font-size:11px;color:var(--text3);margin-top:6px">Pilene endrer rekkefølgen. GPS viser nærhet til startpunktet.</div>
     </div>
 
     <div style="background:var(--card);border-radius:14px;padding:10px 12px;margin-bottom:8px;box-shadow:0 1px 3px rgba(0,0,0,.06)">
@@ -1215,25 +1313,22 @@ function renderPlan(){
     </div>`;
 
   const dragList=document.getElementById('drag-list');
-  const firstActivePos=planOrder.findIndex(id=>!done[id]&&!gpsDone[id]);
+  const firstActivePos=planOrder.findIndex(id=>!done[id]);
   planOrder.forEach((id,pos)=>{
     const s=S[id];
     const isDone=done[id];
-    const isGpsDone=gpsDone[id];
-    const isGpsActive=gpsState.activeId===id;
-    const passes=gpsState.passes[id]||0;
-    const faded=isDone||isGpsDone;
+    const isGpsActive=gpsActive&&gpsState.activeId===id;
     const g=`https://www.google.com/maps/dir/?api=1&destination=${s.lat},${s.lon}&travelmode=driving`;
     const a=`https://maps.apple.com/?daddr=${s.lat},${s.lon}&dirflg=d`;
     const card=document.createElement('div');
     card.dataset.id=id;
-    const borderStyle=isGpsActive?';border:2px solid #3B6D11':(!faded&&pos===firstActivePos?';border:1.5px solid var(--blue)':'');
-    card.style.cssText='background:var(--card);border-radius:14px;margin-bottom:8px;box-shadow:0 1px 3px rgba(0,0,0,.06);overflow:hidden;'+(faded?'opacity:.55':'')+borderStyle;
+    const borderStyle=isGpsActive?';border:2px solid #3B6D11':(pos===firstActivePos?';border:1.5px solid var(--blue)':'');
+    card.style.cssText='background:var(--card);border-radius:14px;margin-bottom:8px;box-shadow:0 1px 3px rgba(0,0,0,.06);overflow:hidden;'+(isDone?'opacity:.55':'')+borderStyle;
     if(isGpsActive) card.classList.add('gps-active');
-    const strikeStyle=faded?'text-decoration:line-through':'';
-    const statusIcon=isDone?'✅':(isGpsDone?'🚗':(isGpsActive?'🔵':'⬜'));
+    const strikeStyle=isDone?'text-decoration:line-through':'';
+    const statusIcon=isDone?'✅':(isGpsActive?'🔵':'⬜');
     card.innerHTML=`
-      <div style="display:flex;align-items:center;gap:10px;padding:11px 12px ${faded?'11px':'6px'}">
+      <div style="display:flex;align-items:center;gap:10px;padding:11px 12px ${isDone?'11px':'6px'}">
         <div style="display:flex;flex-direction:column;gap:3px;flex-shrink:0">
           <button onclick="moveStep(${pos},-1)" ${pos===0?'disabled':''} style="width:30px;height:30px;border-radius:8px;border:0.5px solid rgba(0,0,0,.12);background:${pos===0?'#F2F2F7':'#fff'};color:${pos===0?'#AEAEB2':'#185FA5'};font-size:16px;cursor:${pos===0?'default':'pointer'};display:flex;align-items:center;justify-content:center;font-family:inherit">▲</button>
           <button onclick="moveStep(${pos},1)" ${pos===planOrder.length-1?'disabled':''} style="width:30px;height:30px;border-radius:8px;border:0.5px solid rgba(0,0,0,.12);background:${pos===planOrder.length-1?'#F2F2F7':'#fff'};color:${pos===planOrder.length-1?'#AEAEB2':'#185FA5'};font-size:16px;cursor:${pos===planOrder.length-1?'default':'pointer'};display:flex;align-items:center;justify-content:center;font-family:inherit">▼</button>
@@ -1242,13 +1337,11 @@ function renderPlan(){
         <div style="flex:1;min-width:0">
           <div style="font-size:13px;font-weight:600;color:var(--text);${strikeStyle}">${s.veg} · ${s.tittel}</div>
           <div style="font-size:11px;color:var(--text3);margin-top:1px">${s.seg} · ${s.meter} m${s.notat?' · ⚠ '+s.notat:''}</div>
-          ${isGpsActive?'<div style="font-size:11px;color:#3B6D11;font-weight:600;margin-top:3px">GPS aktiv · pass '+(passes+1)+' av 3</div>':''}
-          ${passes>0&&!isGpsActive&&!faded?'<div style="font-size:11px;color:#BA7517;margin-top:3px">'+passes+' av 3 pass fullført</div>':''}
-          ${isGpsDone&&!isDone?'<div style="font-size:11px;color:#534AB7;margin-top:3px">GPS: kjørt · manuell bekreftelse mangler</div>':''}
+          ${isGpsActive?'<div style="font-size:11px;color:#3B6D11;font-weight:600;margin-top:3px">GPS nær startpunktet</div>':''}
         </div>
         <div style="font-size:16px">${statusIcon}</div>
       </div>
-      ${!faded?'<div style="display:flex;gap:7px;padding:0 12px 11px"><a href="'+g+'" target="_blank" rel="noopener noreferrer" style="flex:1;background:#4285F4;color:#fff;border-radius:9px;padding:8px 4px;font-size:11px;font-weight:600;text-decoration:none;display:flex;align-items:center;justify-content:center;gap:4px">'+pin+' Google Maps</a><a href="'+a+'" target="_blank" rel="noopener noreferrer" style="flex:1;background:#1C1C1E;color:#fff;border-radius:9px;padding:8px 4px;font-size:11px;font-weight:600;text-decoration:none;display:flex;align-items:center;justify-content:center;gap:4px">'+pin+' Apple Maps</a></div>':''}`;
+      ${!isDone?'<div style="display:flex;gap:7px;padding:0 12px 11px"><a href="'+g+'" target="_blank" rel="noopener noreferrer" style="flex:1;background:#4285F4;color:#fff;border-radius:9px;padding:8px 4px;font-size:11px;font-weight:600;text-decoration:none;display:flex;align-items:center;justify-content:center;gap:4px">'+pin+' Google Maps</a><a href="'+a+'" target="_blank" rel="noopener noreferrer" style="flex:1;background:#1C1C1E;color:#fff;border-radius:9px;padding:8px 4px;font-size:11px;font-weight:600;text-decoration:none;display:flex;align-items:center;justify-content:center;gap:4px">'+pin+' Apple Maps</a></div>':''}`;
     dragList.appendChild(card);
   });
 }
@@ -1274,7 +1367,7 @@ function renderOverview(){
             <div class="strek-veg">${s.veg}</div>
             <div class="strek-tittel">${s.tittel}</div>
           </div>
-          <div class="strek-status">${done[s.id]?'✅':(gpsDone[s.id]?'🚗':'⬜')}</div>
+          <div class="strek-status">${done[s.id]?'✅':'⬜'}</div>
         </div>
         <div class="badges">
           <span class="badge b-seg">${s.seg}</span>
@@ -1328,11 +1421,9 @@ function generatePDF(){
   //                   IRI_R1_S,IRI_R1_9,...Tverrfall...]
   const idx=[[0,1],[2,3],[4,5],[6,7],[8,9],[10,11],[12,13],[14,15],[16,17]];
 
-  function fmtTime(t){return t||'–'}
   function fmtVal(v){return (v===''||v===undefined||v===null)?'–':v}
   function statusBadge(s){
     if(done[s.id]) return '<span style="color:#3B6D11;font-weight:700">✅ Fullført</span>';
-    if(gpsDone[s.id]) return '<span style="color:#534AB7;font-weight:700">🚗 GPS kjørt</span>';
     return '<span style="color:#A32D2D;font-weight:700">⬜ Ikke fullført</span>';
   }
 
@@ -1366,10 +1457,10 @@ function generatePDF(){
       </div>
       <div style="border:1px solid #ddd;border-top:none;border-radius:0 0 8px 8px;overflow:hidden">
         <div style="padding:10px 14px;background:#F8F9FA;display:flex;gap:24px;flex-wrap:wrap;font-size:13px;border-bottom:1px solid #eee">
-          <div><span style="color:#666">Dato:</span> <strong>${l.dato||'–'}</strong></div>
-          <div><span style="color:#666">Start:</span> <strong>${fmtTime(l.start)}</strong></div>
-          <div><span style="color:#666">Slutt:</span> <strong>${fmtTime(l.slutt)}</strong></div>
-          <div><span style="color:#666">Kjøringer:</span> <strong>${l.antall||'–'}</strong></div>
+          <div><span style="color:#666">Dato:</span> <strong>${esc(fmtVal(l.dato))}</strong></div>
+          <div><span style="color:#666">Start:</span> <strong>${esc(fmtVal(l.start))}</strong></div>
+          <div><span style="color:#666">Slutt:</span> <strong>${esc(fmtVal(l.slutt))}</strong></div>
+          <div><span style="color:#666">Kjøringer:</span> <strong>${esc(fmtVal(l.antall))}</strong></div>
           <div><span style="color:#666">Status:</span> ${statusBadge(s)}</div>
         </div>
         ${hasData?`
@@ -1383,7 +1474,7 @@ function generatePDF(){
           </thead>
           <tbody>${tableRows}</tbody>
         </table>`:'<div style="padding:12px 14px;color:#999;font-size:13px;font-style:italic">Ingen måledata registrert</div>'}
-        ${l.kommentar?`<div style="padding:8px 14px;background:#FFFBF0;border-top:1px solid #eee;font-size:13px"><span style="color:#666">Kommentar:</span> ${l.kommentar}</div>`:''}
+        ${l.kommentar?`<div style="padding:8px 14px;background:#FFFBF0;border-top:1px solid #eee;font-size:13px"><span style="color:#666">Kommentar:</span> ${esc(l.kommentar)}</div>`:''}
         ${s.notat?`<div style="padding:8px 14px;background:#FEF3C7;border-top:1px solid #eee;font-size:12px;color:#92400E">⚠ ${s.notat}</div>`:''}
       </div>
     </div>`;
@@ -1521,40 +1612,33 @@ function renderDetailContent(){
 }
 
 function renderLog(){
-  const _today=new Date().toISOString().slice(0,10);
-  // Bare dato settes automatisk – start/slutt/antall styres av GPS
-  S.forEach(s=>{
-    const isNewDay=!logData[s.id].dato||logData[s.id].dato<_today;
-    if(isNewDay){
-      logData[s.id].dato=_today;
-      logData[s.id].start='';
-      logData[s.id].slutt='';
-      logData[s.id].antall='';
-    }
-  });
-  document.getElementById('log-content').innerHTML=S.map(s=>`
+  document.getElementById('log-content').innerHTML=S.map(s=>{
+    const l=logData[s.id];
+    return `
     <div class="log-card" data-id="${s.id}">
       <div class="log-title">
         <span style="color:var(--text3);font-weight:500;font-size:14px">${s.id}.</span>
-        <span style="flex:1">${s.veg} <span style="font-weight:400;color:var(--text2);font-size:14px">· ${s.tittel}</span></span>
+        <span style="flex:1">${esc(s.veg)} <span style="font-weight:400;color:var(--text2);font-size:14px">· ${esc(s.tittel)}</span></span>
         <span>${done[s.id]?'✅':''}</span>
       </div>
-      <div class="log-row"><label>Dato</label><input class="log-dato" type="date" value="${logData[s.id].dato}"></div>
-      <div class="log-row"><label>Starttid</label><input class="log-start" type="time" value="${logData[s.id].start}"></div>
-      <div class="log-row"><label>Sluttid</label><input class="log-slutt" type="time" value="${logData[s.id].slutt}"></div>
-      <div class="log-row"><label>Antall kjøringer</label><input class="log-antall" type="number" placeholder="0" min="0" max="9" style="width:70px" inputmode="numeric" value="${logData[s.id].antall}"></div>
-      <div class="log-row"><label>Kommentar</label><input class="log-kommentar" type="text" placeholder="–" value="${logData[s.id].kommentar}"></div>
+      <div class="log-row"><label for="log-dato-${s.id}">Dato</label><input id="log-dato-${s.id}" class="log-dato" type="date" value="${esc(l.dato)}"></div>
+      <div class="log-row"><label for="log-start-${s.id}">Starttid</label><input id="log-start-${s.id}" class="log-start" type="time" value="${esc(l.start)}"></div>
+      <div class="log-row"><label for="log-slutt-${s.id}">Sluttid</label><input id="log-slutt-${s.id}" class="log-slutt" type="time" value="${esc(l.slutt)}"></div>
+      <div class="log-row"><label for="log-antall-${s.id}">Antall kjøringer</label><input id="log-antall-${s.id}" class="log-antall" type="number" placeholder="–" min="0" step="1" inputmode="numeric" value="${esc(l.antall)}"></div>
+      <div class="log-row"><label for="log-kommentar-${s.id}">Kommentar</label><input id="log-kommentar-${s.id}" class="log-kommentar" type="text" placeholder="–" value="${esc(l.kommentar)}"></div>
       <button class="mark-btn ${done[s.id]?'done':''}" data-id="${s.id}" onclick="toggleDone(${s.id})">
         ${done[s.id]?'✅ Fullført':'Marker fullført'}
       </button>
-    </div>`).join('');
+    </div>`;
+  }).join('');
   S.forEach(s=>{
     const card=document.querySelector(`.log-card[data-id="${s.id}"]`);
     if(!card) return;
-    ['dato','start','slutt','antall','kommentar'].forEach(k=>{
-      const inp=card.querySelector('.log-'+k);
-      inp.addEventListener('input',()=>{logData[s.id][k]=inp.value;lsSave();});
-    });
+    for(const navn of LOG_FIELDS){
+      const felt=card.querySelector('.log-'+navn);
+      felt.addEventListener('input',()=>{if(lesLoggfelt(s.id,navn,felt)) lsSave();});
+      felt.addEventListener('change',()=>{if(!felt.validity.valid) felt.reportValidity();});
+    }
   });
 }
 
@@ -1570,6 +1654,7 @@ function toggleDone(id){
 }
 
 function showTab(name,skipSave=false){
+  if(!CFG) return;
   if(!skipSave){
   if(document.getElementById('tab-detail').classList.contains('active')) saveRec(sel);
   if(document.getElementById('tab-log').classList.contains('active')) saveLog();
@@ -1648,10 +1733,12 @@ async function settPin(){
   const a=document.getElementById('pin-ny');
   const pin=(a?a.value:'').trim();
   if(pin.length<4){ setStatus('pin-sett-status','Bruk minst fire tegn.','err'); return; }
+  const aktiv=CFG;
   const h=await pinHash(pin);
   if(!h){ setStatus('pin-sett-status','Nettleseren st\u00f8tter ikke dette her. Kr\u00e6ver https.','err'); return; }
-  CFG.pinHash=h;
-  saveCfg(CFG);
+  if(CFG!==aktiv) return;
+  try{ saveCfg({...CFG,pinHash:h}); }
+  catch(e){ setStatus('pin-sett-status',esc(e.message),'err'); return; }
   try{ localStorage.setItem(LAAS_KEY,h); }catch(e){}
   if(a) a.value='';
   setStatus('pin-sett-status','Koden er satt. Den gjelder f\u00f8rst for sj\u00e5f\u00f8rene n\u00e5r du '
@@ -1661,8 +1748,8 @@ async function settPin(){
 
 function fjernPin(){
   if(!confirm('Fjerne koden? Da blir Oppsett \u00e5pent for alle igjen.')) return;
-  CFG.pinHash=null;
-  saveCfg(CFG);
+  try{ saveCfg({...CFG,pinHash:null}); }
+  catch(e){ setStatus('pin-sett-status',esc(e.message),'err'); return; }
   try{ localStorage.removeItem(LAAS_KEY); }catch(e){}
   setStatus('pin-sett-status','Koden er fjernet. Legg ut datasettet p\u00e5 nytt for at '
     +'det skal gjelde sj\u00e5f\u00f8rene.','ok');
@@ -1706,39 +1793,42 @@ function renderSetup(){
         +'<div id="pin-sett-status"></div>';
   }
 
-  const varsel=document.getElementById('server-varsel');
-  if(varsel){
-    varsel.innerHTML=serverAvvik()
-      ? '<div class="setup-card" style="border:1.5px solid var(--amber);background:var(--amber-l)">'
-        +'<h3 style="color:var(--amber)">Serveren har et annet datasett</h3>'
-        +'<p style="color:var(--amber)">Du bruker &laquo;'+esc(CFG.tittel)+'&raquo;, som du har importert her på enheten. '
-        +'På serveren ligger &laquo;'+esc(serverCfg.tittel)+'&raquo;. Andre sjåfører ser serverversjonen.</p>'
-        +'<button class="setup-btn primary" onclick="reloadFromServer()">Bytt til serverdatasettet</button></div>'
-      : '';
-  }
+  document.getElementById('bruk-lokalt').hidden=!cfgValg.lokal||cfgValg.kilde==='lokal';
   const el=document.getElementById('cfg-info');
   if(!el) return;
-  let src='Innebygd standard';
-  try{ if(localStorage.getItem(CFG_KEY)) src='Importert i appen'; }catch(e){}
-  if(CFG._fromServer) src='harmonisering-data.json';
+  const src={server:'harmonisering-data.json',lokal:'Lokalt datasett',standard:'Innebygd standard'}[cfgValg.kilde];
   const rows=[
     ['Tittel',CFG.tittel],
     ['År',CFG.aar||'–'],
     ['Strekninger',S.length],
-    ['Lagringsnøkkel',STORE],
+    ['Datasett-ID',CFG.id],
     ['Metodefil',CFG.filer.metodefilPdf||'–'],
     ['Kilde',src]
   ];
   el.innerHTML=rows.map(r=>'<div class="setup-kv"><span>'+esc(r[0])+'</span><span>'+esc(r[1])+'</span></div>').join('');
 }
 
-function installCfg(rawObj,srcLabel){
+function byttDatasett(c,valg){
+  const forrige=CFG;
+  if(!lagreAktivFane()) throw new Error('Ruta i bruk beholdes fordi registreringene ikke kunne lagres.');
+  let kopi=null;
+  if(STORE!==rutenokkel(c)){
+    const {pinHash,...datasett}=forrige;
+    kopi={datasett,registreringer:JSON.parse(sistLagret)};
+  }
+  lagreDatasettvalg(valg);
+  applyCfg(c,forrige);
+  renderOverview();
+  return kopi;
+}
+
+function installCfg(rawObj){
+  if(erLaast()) return false;
   const c=normalizeCfg(rawObj);
   if(CFG && c.id===CFG.id && !confirm('Datasettet har samme id ("'+c.id+'") som det aktive. Registreringene dine beholdes, men strekningene byttes ut. Fortsette?')) return false;
-  saveCfg(c);
-  applyCfg(c);
-  renderOverview();
+  const kopi=byttDatasett(c,{...lesDatasettvalg(),kilde:'lokal',lokal:c});
   renderSetup();
+  if(kopi) visDatasettstatus('Målinger og logg for den forrige ruta er lagret separat.',kopi);
   setStatus('json-status','Datasettet «'+esc(c.tittel)+'» er tatt i bruk med '+c.strekninger.length+' strekninger.','ok');
   return true;
 }
@@ -1749,7 +1839,7 @@ function onJsonFile(input){
   if(!f) return;
   const r=new FileReader();
   r.onload=()=>{
-    try{ installCfg(JSON.parse(r.result),f.name); }
+    try{ installCfg(JSON.parse(r.result)); }
     catch(e){ setStatus('json-status','Klarte ikke lese fila: '+esc(e.message),'err'); }
   };
   r.onerror=()=>setStatus('json-status','Klarte ikke åpne fila.','err');
@@ -1760,41 +1850,60 @@ function applyPastedJson(){
   const ta=document.getElementById('paste-json');
   const t=(ta.value||'').trim();
   if(!t){ setStatus('json-status','Lim inn JSON i feltet først.','err'); return; }
-  try{ if(installCfg(JSON.parse(t),'innlimt')) ta.value=''; }
+  try{ if(installCfg(JSON.parse(t))) ta.value=''; }
   catch(e){ setStatus('json-status','Ugyldig JSON: '+esc(e.message),'err'); }
 }
 
 async function reloadFromServer(){
-  setStatus('json-status','Henter ...','info');
+  if(serverByttePaagar||!CFG) return;
+  const aktiv=CFG;
+  serverByttePaagar=true;
+  renderDatasettvarsel();
   try{
-    const r=await fetch('harmonisering-data.json',{cache:'no-store'});
-    if(!r.ok) throw new Error('Fant ikke harmonisering-data.json (HTTP '+r.status+')');
-    const c=normalizeCfg(await r.json());
-    c._fromServer=true;
-    serverCfg=JSON.parse(JSON.stringify(c));
-    try{localStorage.removeItem(CFG_KEY);}catch(e){}
-    applyCfg(c);
-    renderOverview();
-    renderSetup();
-    setStatus('json-status','Hentet «'+esc(c.tittel)+'» fra serveren.','ok');
+    if(!await sjekkServerdata()) throw new Error('Kunne ikke hente serverruta. Enheten bruker fortsatt ruta som var åpen.');
+    if(CFG!==aktiv) throw new Error('Ruta er byttet under kontrollen. Velg serverruta på nytt hvis du vil bruke den.');
+    const c=serverCfg;
+    const kopi=byttDatasett(c,{...lesDatasettvalg(),kilde:'server',server:c});
+    showTab('overview',true);
+    visDatasettstatus('Serverruta «'+c.tittel+'» er tatt i bruk.'
+      +(kopi?' Målinger og logg for den forrige ruta er lagret separat.':''),kopi);
   }catch(e){
-    setStatus('json-status',esc(e.message),'err');
+    visDatasettstatus(e.message);
+  }finally{
+    serverByttePaagar=false;
+    renderDatasettvarsel();
+  }
+}
+
+function brukLagretLokalt(){
+  if(erLaast()) return;
+  const valg=lesDatasettvalg();
+  if(!valg.lokal) return;
+  try{
+    const kopi=byttDatasett(valg.lokal,{...valg,kilde:'lokal'});
+    renderSetup();
+    visDatasettstatus('Det lagrede lokale datasettet er tatt i bruk.',kopi);
+  }catch(e){
+    visDatasettstatus(e.message);
   }
 }
 
 function cfgJson(){
   const out=JSON.parse(JSON.stringify(CFG));
-  delete out._fromServer;
   out.strekninger=out.strekninger.map(s=>{const c=Object.assign({},s);delete c.id;return c;});
   return JSON.stringify(out,null,2);
 }
 
-function exportCfg(){
-  const blob=new Blob([cfgJson()],{type:'application/json'});
+function lastNedJson(tekst,filnavn){
+  const blob=new Blob([tekst],{type:'application/json'});
   const url=URL.createObjectURL(blob);
   const a=document.createElement('a');
-  a.href=url; a.download=CFG.id+'-data.json'; a.click();
+  a.href=url; a.download=filnavn; a.click();
   URL.revokeObjectURL(url);
+}
+
+function exportCfg(){
+  lastNedJson(cfgJson(),CFG.id+'-data.json');
 }
 
 /* Snarvei for telefon: lim rett inn i GitHubs filredigering,
@@ -2168,7 +2277,9 @@ async function nvdbLookup(ref){
 }
 
 async function fetchNvdbCoords(){
-  const target=pdfDraft.length?pdfDraft:S;
+  const aktiv=CFG;
+  const utkast=pdfDraft.length>0;
+  const target=utkast?pdfDraft:S.map(s=>({...s}));
   if(!target.length){ setStatus('nvdb-status','Ingen strekninger a sla opp.','err'); return; }
   let ok=0; const feil=[];
   for(let i=0;i<target.length;i++){
@@ -2185,8 +2296,13 @@ async function fetchNvdbCoords(){
       feil.push(esc(ref)+': '+esc(e.message));
     }
   }
-  if(pdfDraft.length) renderDraft();
-  else { CFG.strekninger=S; saveCfg(CFG); renderOverview(); }
+  if(utkast) renderDraft();
+  else if(ok){
+    if(CFG!==aktiv){ setStatus('nvdb-status','Ruta er byttet. Kjør oppslaget på nytt for den aktive ruta.','info'); return; }
+    try{ saveCfg({...CFG,strekninger:target}); }
+    catch(e){ setStatus('nvdb-status',esc(e.message),'err'); return; }
+    renderOverview();
+  }
   const msg='Hentet koordinater for '+ok+' av '+target.length+' strekninger.'
     +(feil.length?'<br>Uten treff: '+feil.join('<br>'):'');
   setStatus('nvdb-status',msg,ok?'ok':'err');
@@ -2254,7 +2370,7 @@ function commitDraft(){
     strekninger:pdfDraft.map(r=>{const c=Object.assign({},r);delete c._mFra;return c;})
   };
   try{
-    installCfg(c,'PDF');
+    if(!installCfg(c)) return;
     setStatus('pdf-status','Datasettet er lagret og tatt i bruk. Husk å laste ned JSON-en under «Aktivt datasett» og legge den på serveren som harmonisering-data.json.','ok');
     document.getElementById('pdf-draft').innerHTML='';
   }catch(e){
@@ -2299,6 +2415,8 @@ function onGeoFile(input){
   const f=input.files&&input.files[0];
   input.value='';
   if(!f) return;
+  const aktiv=CFG;
+  const utkast=pdfDraft.length>0;
   const r=new FileReader();
   r.onload=()=>{
     try{
@@ -2312,15 +2430,16 @@ function onGeoFile(input){
         const c=firstCoord(ft.geometry);
         if(m&&c) byVeg[m[1].replace(/\s+/g,'').toLowerCase()]=c;
       });
-      const target=pdfDraft.length?pdfDraft:S;
+      if(!utkast&&CFG!==aktiv) throw new Error('Ruta er byttet. Velg fila på nytt for den aktive ruta.');
+      const target=utkast?pdfDraft:S.map(s=>({...s}));
       let hit=0;
       target.forEach(s=>{
         const c=byVeg[String(s.veg).replace(/\s+/g,'').toLowerCase()];
         if(c){ s.lon=Number(c[0]); s.lat=Number(c[1]); hit++; }
       });
       if(!hit) throw new Error('Fant '+feats.length+' features, men ingen vegnummer som matcher strekningene.');
-      if(pdfDraft.length){ renderDraft(); }
-      else{ CFG.strekninger=S; saveCfg(CFG); renderOverview(); }
+      if(utkast){ renderDraft(); }
+      else{ saveCfg({...CFG,strekninger:target}); renderOverview(); }
       setStatus('geo-status','Oppdaterte koordinater for '+hit+' strekning(er).','ok');
     }catch(e){
       setStatus('geo-status',esc(e.message),'err');
@@ -2337,6 +2456,7 @@ function onGeoFile(input){
    ============================================================ */
 
 let swReg=null;
+let venterPaAppoppdatering=false;
 
 function registrerSW(){
   if(!('serviceWorker' in navigator)) return;
@@ -2356,11 +2476,9 @@ function registrerSW(){
     if(e.data&&e.data.type==='NY_VERSJON') visOppdatering();
   });
 
-  let lastetPaNytt=false;
   navigator.serviceWorker.addEventListener('controllerchange',()=>{
-    if(lastetPaNytt) return;
-    lastetPaNytt=true;
-    location.reload();
+    if(venterPaAppoppdatering) location.reload();
+    else if(CFG) (serverHenting||Promise.resolve()).then(sjekkServerdata);
   });
 }
 
@@ -2370,9 +2488,13 @@ function visOppdatering(){
 }
 
 function taIBrukNyVersjon(){
+  if(CFG&&!lagreAktivFane()) return;
   const el=document.getElementById('oppdater-linje');
   if(el) el.classList.remove('vis');
-  if(swReg&&swReg.waiting) swReg.waiting.postMessage('OPPDATER_NA');
+  if(swReg&&swReg.waiting){
+    venterPaAppoppdatering=true;
+    swReg.waiting.postMessage('OPPDATER_NA');
+  }
   else location.reload();
 }
 
@@ -2410,15 +2532,16 @@ async function klargjorOffline(){
    ============================================================ */
 
 (async function boot(){
-  let c;
-  try{ c=await loadCfg(); }
-  catch(e){ c=normalizeCfg(DEFAULT_CFG); }
-  applyCfg(c);
+  await loadCfg();
   renderOverview();
   autoStartGPS();
   registrerSW();
 })();
 
+window.addEventListener('online',()=>{if(CFG) sjekkServerdata();});
+document.addEventListener('visibilitychange',()=>{
+  if(CFG&&document.visibilityState==='visible') sjekkServerdata();
+});
 window.addEventListener('pagehide',()=>{if(gpsState.watching) stopGPS();});
 window.addEventListener('beforeunload',()=>{if(gpsState.watching) stopGPS();});
 </script>
